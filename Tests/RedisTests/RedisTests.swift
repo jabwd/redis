@@ -2,6 +2,8 @@ import Redis
 import Vapor
 import Logging
 import XCTVapor
+import RediStack
+import Dispatch
 
 extension String {
     var int: Int? { Int(self) }
@@ -20,6 +22,14 @@ final class RedisTests: XCTestCase {
             hostname: Environment.get("REDIS_HOSTNAME") ?? "localhost",
             port: Environment.get("REDIS_PORT")?.int ?? 6379
         )
+
+        let app = Application()
+        defer { app.shutdown() }
+        app.redis.configuration = redisConfig
+        try app.boot()
+
+        // Get rid of any of the cache items left behind from earlier test runs
+        try app.redis.send(RedisCommand<Void>(keyword: "FLUSHDB", arguments: [])).wait()
     }
 }
 
@@ -32,7 +42,10 @@ extension RedisTests {
         app.redis.configuration = redisConfig
         try app.boot()
 
-        let info = try app.redis.send(command: "INFO").wait()
+        let command = RedisCommand(keyword: "INFO", arguments: []) { respValue in
+            return respValue
+        }
+        let info = try app.redis.send(command).wait()
         XCTAssertContains(info.string, "redis_version")
     }
 
@@ -43,9 +56,7 @@ extension RedisTests {
         app.redis.configuration = redisConfig
 
         app.get("test") { req in
-            req.redis.send(command: "INFO").map {
-                $0.description
-            }
+            req.redis.send(.info())
         }
 
         try app.test(.GET, "test") { res in
@@ -102,11 +113,11 @@ extension RedisTests {
         app.get("test") {
             $0.redis
                 .withBorrowedClient { client in
-                    return client.send(command: "MULTI")
-                        .flatMap { _ in client.send(command: "PING") }
+                    return client.send(RedisCommand<Void>(keyword: "MULTI", arguments: []))
+                        .flatMap { _ in client.send(.ping()) }
                         .flatMap { queuedResponse -> EventLoopFuture<RESPValue> in
-                            XCTAssertEqual(queuedResponse.string, "QUEUED")
-                            return client.send(command: "EXEC")
+                            XCTAssertEqual(queuedResponse, "QUEUED")
+                            return client.send(RedisCommand<RESPValue>(keyword: "EXEC", arguments: []))
                         }
                 }
                 .map { result -> [String] in
@@ -129,12 +140,12 @@ extension RedisTests {
 
         let result = try app.redis
             .withBorrowedConnection { client in
-                return client.send(command: "MULTI")
-                  .flatMap { _ in client.send(command: "PING") }
-                  .flatMap { queuedResponse -> EventLoopFuture<RESPValue> in
-                      XCTAssertEqual(queuedResponse.string, "QUEUED")
-                      return client.send(command: "EXEC")
-                  }
+                return client.send(RedisCommand<Void>(keyword: "MULTI", arguments: []))
+                    .flatMap { _ in client.send(.ping()) }
+                    .flatMap { queuedResponse -> EventLoopFuture<RESPValue> in
+                        XCTAssertEqual(queuedResponse, "QUEUED")
+                        return client.send(RedisCommand<RESPValue>(keyword: "EXEC", arguments: []))
+                    }
             }
             .map { result -> [String] in
                 guard let response = result.array else { return [] }

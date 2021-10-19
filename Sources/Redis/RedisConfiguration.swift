@@ -2,6 +2,7 @@
 @_exported import struct Logging.Logger
 @_exported import struct NIO.TimeAmount
 import enum NIO.SocketAddress
+import NIOSSL
 
 /// Configuration for connecting to a Redis instance
 public struct RedisConfiguration {
@@ -11,6 +12,7 @@ public struct RedisConfiguration {
     public var password: String?
     public var database: Int?
     public var pool: PoolOptions
+    public var tlsConfiguration: TLSConfiguration?
 
     public struct PoolOptions {
         public var maximumConnectionCount: RedisConnectionPoolSize
@@ -34,12 +36,12 @@ public struct RedisConfiguration {
         }
     }
 
-    public init(url string: String, pool: PoolOptions = .init()) throws {
+    public init(url string: String, pool: PoolOptions = .init(), tlsConfiguration: TLSConfiguration? = nil) throws {
         guard let url = URL(string: string) else { throw ValidationError.invalidURLString }
-        try self.init(url: url, pool: pool)
+        try self.init(url: url, pool: pool, tlsConfiguration: tlsConfiguration)
     }
 
-    public init(url: URL, pool: PoolOptions = .init()) throws {
+    public init(url: URL, pool: PoolOptions = .init(), tlsConfiguration: TLSConfiguration? = nil) throws {
         guard
             let scheme = url.scheme,
             !scheme.isEmpty
@@ -52,7 +54,8 @@ public struct RedisConfiguration {
             port: url.port ?? RedisConnection.Configuration.defaultPort,
             password: url.password,
             database: Int(url.lastPathComponent),
-            pool: pool
+            pool: pool,
+            tlsConfiguration: tlsConfiguration
         )
     }
 
@@ -61,7 +64,8 @@ public struct RedisConfiguration {
         port: Int = RedisConnection.Configuration.defaultPort,
         password: String? = nil,
         database: Int? = nil,
-        pool: PoolOptions = .init()
+        pool: PoolOptions = .init(),
+        tlsConfiguration: TLSConfiguration? = nil
     ) throws {
         if database != nil && database! < 0 { throw ValidationError.outOfBoundsDatabaseID }
 
@@ -69,7 +73,8 @@ public struct RedisConfiguration {
             serverAddresses: [.makeAddressResolvingHost(hostname, port: port)],
             password: password,
             database: database,
-            pool: pool
+            pool: pool,
+            tlsConfiguration: tlsConfiguration
         )
     }
 
@@ -77,12 +82,15 @@ public struct RedisConfiguration {
         serverAddresses: [SocketAddress],
         password: String? = nil,
         database: Int? = nil,
-        pool: PoolOptions = .init()
+        useSSL: Bool = false,
+        pool: PoolOptions = .init(),
+        tlsConfiguration: TLSConfiguration? = nil
     ) throws {
         self.serverAddresses = serverAddresses
         self.password = password
         self.database = database
         self.pool = pool
+        self.tlsConfiguration = tlsConfiguration
     }
 }
 
@@ -95,6 +103,7 @@ extension RedisConnectionPool.Configuration {
                 connectionInitialDatabase: config.database,
                 connectionPassword: config.password,
                 connectionDefaultLogger: defaultLogger,
+                tlsConfiguration: config.tlsConfiguration,
                 tcpClient: nil
             ),
             minimumConnectionCount: config.pool.minimumConnectionCount,

@@ -26,11 +26,11 @@ extension Request.Redis: RedisClient {
             .logging(to: logger)
     }
 
-    public func send(command: String, with arguments: [RESPValue]) -> EventLoopFuture<RESPValue> {
+    public func send<CommandResult>(_ command: RedisCommand<CommandResult>) -> EventLoopFuture<CommandResult> {
         self.request.application.redis(self.id)
             .pool(for: self.eventLoop)
             .logging(to: self.request.logger)
-            .send(command: command, with: arguments)
+            .send(command)
     }
     
     public func subscribe(

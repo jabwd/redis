@@ -1,5 +1,6 @@
 import AsyncKit
 import Foundation
+import RediStack
 
 extension RedisClient {
     /// Gets the provided key as a decodable type.
@@ -27,7 +28,8 @@ extension RedisClient {
         where E: Encodable
     {
         do {
-            return try self.setex(key, to: JSONEncoder().encode(entity), expirationInSeconds: expiration)
+            return self.set(key, to: try JSONEncoder().encode(entity), onCondition: .none, expiration: RedisSetCommandExpiration.seconds(expiration)).map { _ in
+            }
         } catch {
             return self.eventLoop.makeFailedFuture(error)
         }
